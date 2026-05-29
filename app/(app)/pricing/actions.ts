@@ -1,6 +1,5 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { stripe } from '@/lib/stripe'
 
@@ -18,26 +17,22 @@ export async function createCheckoutSession(
   console.log('[Checkout Action] accessToken provided:', !!accessToken);
   console.log('[Checkout Action] accessToken length:', accessToken ? accessToken.length : 0);
 
+  if (!accessToken) {
+    return { error: 'Not authenticated' };
+  }
+
   try {
-    // Use token-based client if accessToken is provided (more reliable for Server Actions)
-    // Otherwise fall back to cookie-based client
-    const usingTokenAuth = !!accessToken;
-
-    const supabase = accessToken
-      ? createSupabaseClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          {
-            global: {
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-              },
-            },
-          }
-        )
-      : await createClient();
-
-    console.log('[Checkout Action] Using auth method:', usingTokenAuth ? 'ACCESS_TOKEN (hybrid)' : 'COOKIES (fallback)');
+    const supabase = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      }
+    );
 
     const { data: { user }, error: getUserError } = await supabase.auth.getUser();
 
