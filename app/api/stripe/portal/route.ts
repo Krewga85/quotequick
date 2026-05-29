@@ -14,13 +14,13 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    const { user, supabase } = await getUserFromRequest(req);
+    const { user } = await getUserFromRequest(req);
 
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const businessDetails = await getBusinessDetails(supabase);
+    const businessDetails = await getBusinessDetails();
 
     if (!businessDetails.stripe_customer_id) {
       return NextResponse.json(

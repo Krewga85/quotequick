@@ -23,13 +23,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
     }
 
-    const { user, supabase } = await getUserFromRequest(req);
+    const { user } = await getUserFromRequest(req);
 
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const businessDetails = await getBusinessDetails(supabase);
+    const businessDetails = await getBusinessDetails();
 
     let customerId = businessDetails.stripe_customer_id;
 
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       await saveBusinessDetails({
         ...businessDetails,
         stripe_customer_id: customerId,
-      }, supabase);
+      });
     }
 
     const priceId = PRICE_IDS[plan as 'pro' | 'premium'];
