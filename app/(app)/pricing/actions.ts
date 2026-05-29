@@ -2,7 +2,6 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { getBusinessDetails, saveBusinessDetails } from '@/lib/data'
 import { stripe } from '@/lib/stripe'
 
 const PRICE_IDS = {
@@ -61,29 +60,31 @@ export async function createCheckoutSession(
       return { error: 'Invalid plan' }
     }
 
-    console.log('[Checkout Action] Calling getBusinessDetails with authenticated client...');
-    // Pass the authenticated supabase client so getBusinessDetails uses the same auth context
-    const businessDetails = await getBusinessDetails(supabase);
-    console.log('[Checkout Action] getBusinessDetails succeeded');
+    // Get existing stripe_customer_id (or create one) using the same authenticated client
+    let { data: businessRow } = await supabase
+      .from('business_settings')
+      .select('stripe_customer_id')
+      .eq('user_id', user.id)
+      .single();
 
-    let customerId = businessDetails.stripe_customer_id
+    let customerId = businessRow?.stripe_customer_id;
 
-    // Create Stripe customer if doesn't exist
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
         metadata: {
           user_id: user.id,
         },
-      })
-      customerId = customer.id
+      });
+      customerId = customer.id;
 
-      console.log('[Checkout Action] Saving new stripe_customer_id...');
-      await saveBusinessDetails({
-        ...businessDetails,
-        stripe_customer_id: customerId,
-      }, supabase)
-      console.log('[Checkout Action] stripe_customer_id saved');
+      await supabase
+        .from('business_settings')
+        .upsert({
+          user_id: user.id,
+          stripe_customer_id: customerId,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' });
     }
 
     const priceId = PRICE_IDS[plan]
