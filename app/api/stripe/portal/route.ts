@@ -14,33 +14,10 @@ import { stripe } from '@/lib/stripe';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  try {
-    const { user } = await getUserFromRequest(req);
-
-    if (!user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    }
-
-    const businessDetails = await getBusinessDetails();
-
-    if (!businessDetails.stripe_customer_id) {
-      return NextResponse.json(
-        { error: 'No active subscription found' },
-        { status: 400 }
-      );
-    }
-
-    const portalSession = await stripe.billingPortal.sessions.create({
-      customer: businessDetails.stripe_customer_id,
-      return_url: `${process.env.NEXT_PUBLIC_SITE_URL}/settings`,
-    });
-
-    return NextResponse.json({ url: portalSession.url });
-  } catch (error: any) {
-    console.error('Portal error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to create portal session' },
-      { status: 500 }
-    );
-  }
+  // Legacy route disabled.
+  // Billing portal functionality moved to Server Action: app/(app)/settings/actions.ts
+  return NextResponse.json(
+    { error: 'This endpoint is deprecated.' },
+    { status: 410 }
+  );
 }
