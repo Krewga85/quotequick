@@ -12,14 +12,16 @@ function generateQuoteNumber(): string {
 
 async function getSupabase() {
   if (typeof window !== 'undefined') {
-    // Running in browser - use the browser Supabase client
-    // This prevents server-only code (next/headers) from being bundled into client chunks
+    // Browser context: use browser client (safe for client components)
     const { createClient } = await import('@/lib/supabase/client')
     return createClient()
   }
 
-  // Server / RSC context - use the server Supabase client
-  const { createClient } = await import('./supabase/server')
+  // Server context only: dynamically import to prevent 'next/headers' and 'server-only'
+  // from being bundled into any client chunks.
+  const { createClient } = await import(
+    /* webpackIgnore: true */ './supabase/server'
+  )
   return createClient()
 }
 
