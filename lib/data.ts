@@ -1,5 +1,6 @@
-import { createClient } from './supabase/client'
-import { Quote, QuoteLineItem, Customer, QuoteStatus, BusinessDetails, Invoice, InvoiceStatus, Plan, InvoiceLineItem } from './types'
+import { createClient } from './supabase/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { Quote, QuoteLineItem, Customer } from './types'
 
 // Generate a simple quote number like Q-2405-0017
 function generateQuoteNumber(): string {
@@ -14,9 +15,9 @@ function getSupabase() {
   return createClient()
 }
 
-// Customers
+// Customers (basic for now)
 export async function getCustomers(): Promise<Customer[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from('customers')
     .select('*')
     .order('created_at', { ascending: false })
@@ -25,23 +26,9 @@ export async function getCustomers(): Promise<Customer[]> {
   return data || []
 }
 
-export async function createCustomer(customer: Omit<Customer, 'id' | 'user_id' | 'created_at'>): Promise<Customer> {
-  const { data: { user } } = await getSupabase().auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const { data, error } = await getSupabase()
-    .from('customers')
-    .insert({ ...customer, user_id: user.id })
-    .select()
-    .single()
-
-  if (error) throw error
-  return data
-}
-
 // Quotes
 export async function getQuotes(): Promise<Quote[]> {
-  const { data, error } = await getSupabase()
+  const { data, error } = await (await getSupabase())
     .from('quotes')
     .select(`
       *,
@@ -54,7 +41,7 @@ export async function getQuotes(): Promise<Quote[]> {
   // Fetch line items for each quote
   const quotesWithItems = await Promise.all(
     (data || []).map(async (quote) => {
-      const { data: items } = await getSupabase()
+      const { data: items } = await (await getSupabase())
         .from('quote_line_items')
         .select('*')
         .eq('quote_id', quote.id)
@@ -74,7 +61,8 @@ export async function createQuote(
   lineItems: QuoteLineItem[],
   notes?: string
 ): Promise<Quote> {
-  const { data: { user } } = await getSupabase().auth.getUser()
+  const supabase = await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
   // Calculate totals (20% VAT)
@@ -86,14 +74,14 @@ export async function createQuote(
   const quoteNumber = generateQuoteNumber()
 
   // Insert quote
-  const { data: quote, error: quoteError } = await getSupabase()
+  const { data: quote, error: quoteError } = await supabase
     .from('quotes')
     .insert({
       user_id: user.id,
       quote_number: quoteNumber,
       customer_id: customerId,
       date: new Date().toISOString().split('T')[0],
-      status: 'pending' as QuoteStatus,
+      status: 'pending',
       subtotal: Number(subtotal.toFixed(2)),
       vat_rate: vatRate,
       vat_amount: Number(vatAmount.toFixed(2)),
@@ -114,20 +102,20 @@ export async function createQuote(
     unit_price: item.unit_price,
   }))
 
-  const { error: itemsError } = await getSupabase()
+  const { error: itemsError } = await supabase
     .from('quote_line_items')
     .insert(lineItemsWithQuoteId)
 
   if (itemsError) throw itemsError
 
   // Return full quote with customer + items
-  const { data: fullQuote } = await getSupabase()
+  const { data: fullQuote } = await supabase
     .from('quotes')
     .select(`*, customer:customers(*)`)
     .eq('id', quote.id)
     .single()
 
-  const { data: items } = await getSupabase()
+  const { data: items } = await supabase
     .from('quote_line_items')
     .select('*')
     .eq('quote_id', quote.id)
@@ -138,8 +126,36 @@ export async function createQuote(
   } as Quote
 }
 
-export async function updateQuoteStatus(quoteId: string, status: QuoteStatus): Promise<void> {
-  const { error } = await getSupabase()
+export async function getQuoteById(id: string): Promise<Quote | null> {
+  const supabase = await getSupabase()
+
+  const { data: quote, error } = await supabase
+    .from('quotes')
+    .select(`
+      *,
+      customer:customers(*)
+    `)
+    .eq('id', id)
+    .single()
+
+  if (error) {
+    if (error.code === 'PGRST116') return null
+    throw error
+  }
+
+  const { data: items } = await supabase
+    .from('quote_line_items')
+    .select('*')
+    .eq('quote_id', id)
+
+  return {
+    ...quote,
+    line_items: items || [],
+  } as Quote
+}
+
+export async function updateQuoteStatus(quoteId: string, status: 'accepted' | 'declined'): Promise<void> {
+  const { error } = await (await getSupabase())
     .from('quotes')
     .update({ status })
     .eq('id', quoteId)
@@ -147,69 +163,42 @@ export async function updateQuoteStatus(quoteId: string, status: QuoteStatus): P
   if (error) throw error
 }
 
-export async function deleteQuote(quoteId: string): Promise<void> {
-  // Line items cascade delete via RLS + DB
-  const { error } = await getSupabase()
-    .from('quotes')
-    .delete()
-    .eq('id', quoteId)
+// ==================== Customers (Full CRUD for Phase 5) ====================
 
-  if (error) throw error
-}
-
-// ==================== Business Settings ====================
-
-export async function getBusinessDetails(): Promise<BusinessDetails> {
-  const { data: { user } } = await getSupabase().auth.getUser()
+export async function createCustomer(customer: Omit<Customer, 'id' | 'user_id' | 'created_at'>): Promise<Customer> {
+  const supabase = await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const { data, error } = await getSupabase()
-    .from('business_settings')
-    .select('*')
-    .eq('user_id', user.id)
-    .single()
-
-  if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-    throw error
-  }
-
-  // Return defaults if no settings saved yet
-  return data || {
-    name: '',
-    vat_rate: 20,
-    plan: 'free' as const,
-  }
-}
-
-// Helper to get subscription-aware plan
-export async function getUserSubscriptionStatus() {
-  const details = await getBusinessDetails();
-  return {
-    plan: details.plan || 'free',
-    status: details.subscription_status || null,
-    current_period_end: details.current_period_end || null,
-    isActive: details.plan !== 'free' && details.subscription_status === 'active',
-  };
-}
-
-export async function saveBusinessDetails(details: Partial<BusinessDetails>): Promise<BusinessDetails> {
-  const { data: { user } } = await getSupabase().auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const payload = {
-    ...details,
-    user_id: user.id,
-    updated_at: new Date().toISOString(),
-  }
-
-  const { data, error } = await getSupabase()
-    .from('business_settings')
-    .upsert(payload, { onConflict: 'user_id' })
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({ ...customer, user_id: user.id })
     .select()
     .single()
 
   if (error) throw error
   return data
+}
+
+export async function updateCustomer(id: string, updates: Partial<Omit<Customer, 'id' | 'user_id' | 'created_at'>>): Promise<Customer> {
+  const { data, error } = await (await getSupabase())
+    .from('customers')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function deleteCustomer(id: string): Promise<void> {
+  const { error } = await (await getSupabase())
+    .from('customers')
+    .delete()
+    .eq('id', id)
+
+  if (error) throw error
 }
 
 // ==================== Invoices ====================
@@ -223,7 +212,8 @@ function generateInvoiceNumber(): string {
 }
 
 export async function getInvoices(): Promise<Invoice[]> {
-  const { data, error } = await getSupabase()
+  const supabase = await getSupabase()
+  const { data, error } = await supabase
     .from('invoices')
     .select(`
       *,
@@ -238,7 +228,7 @@ export async function getInvoices(): Promise<Invoice[]> {
   const invoicesWithData = await Promise.all(
     (data || []).map(async (inv: any) => {
       if (inv.quote) {
-        const { data: items } = await getSupabase()
+        const { data: items } = await supabase
           .from('quote_line_items')
           .select('*')
           .eq('quote_id', inv.quote.id)
@@ -252,20 +242,12 @@ export async function getInvoices(): Promise<Invoice[]> {
 }
 
 export async function createInvoiceFromQuote(quoteId: string): Promise<Invoice> {
-  const { data: { user } } = await getSupabase().auth.getUser()
+  const supabase = await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // === Plan Enforcement for Free users ===
-  const plan = await getCurrentPlan()
-  if (plan === 'free') {
-    const canCreate = await canCreateMoreInvoices()
-    if (!canCreate) {
-      throw new Error('FREE_LIMIT_REACHED')
-    }
-  }
-
   // Fetch the full quote with customer
-  const { data: quoteData, error: quoteErr } = await getSupabase()
+  const { data: quoteData, error: quoteErr } = await supabase
     .from('quotes')
     .select(`*, customer:customers(*)`)
     .eq('id', quoteId)
@@ -274,7 +256,7 @@ export async function createInvoiceFromQuote(quoteId: string): Promise<Invoice> 
   if (quoteErr || !quoteData) throw new Error('Quote not found')
 
   // Fetch line items
-  const { data: lineItems } = await getSupabase()
+  const { data: lineItems } = await supabase
     .from('quote_line_items')
     .select('*')
     .eq('quote_id', quoteId)
@@ -288,7 +270,7 @@ export async function createInvoiceFromQuote(quoteId: string): Promise<Invoice> 
   const dueDate = new Date(fullQuote.date)
   dueDate.setDate(dueDate.getDate() + 14)
 
-  const { data: invoice, error } = await getSupabase()
+  const { data: invoice, error } = await supabase
     .from('invoices')
     .insert({
       user_id: user.id,
@@ -297,7 +279,7 @@ export async function createInvoiceFromQuote(quoteId: string): Promise<Invoice> 
       customer_id: fullQuote.customer_id,
       date: fullQuote.date,
       due_date: dueDate.toISOString().split('T')[0],
-      status: 'pending' as InvoiceStatus,
+      status: 'pending',
       subtotal: fullQuote.subtotal,
       vat_rate: fullQuote.vat_rate,
       vat_amount: fullQuote.vat_amount,
@@ -316,7 +298,7 @@ export async function createInvoiceFromQuote(quoteId: string): Promise<Invoice> 
 }
 
 export async function updateInvoiceStatus(invoiceId: string, status: InvoiceStatus): Promise<void> {
-  const { error } = await getSupabase()
+  const { error } = await (await getSupabase())
     .from('invoices')
     .update({ status })
     .eq('id', invoiceId)
@@ -325,7 +307,8 @@ export async function updateInvoiceStatus(invoiceId: string, status: InvoiceStat
 }
 
 export async function getInvoiceById(id: string): Promise<Invoice | null> {
-  const { data, error } = await getSupabase()
+  const supabase = await getSupabase()
+  const { data, error } = await supabase
     .from('invoices')
     .select(`
       *,
@@ -341,7 +324,7 @@ export async function getInvoiceById(id: string): Promise<Invoice | null> {
   }
 
   if (data?.quote) {
-    const { data: items } = await getSupabase()
+    const { data: items } = await supabase
       .from('quote_line_items')
       .select('*')
       .eq('quote_id', data.quote.id)
@@ -363,17 +346,9 @@ export async function createInvoice(invoiceData: {
   line_items: InvoiceLineItem[]
   notes?: string
 }): Promise<Invoice> {
-  const { data: { user } } = await getSupabase().auth.getUser()
+  const supabase = await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
-
-  // Plan enforcement
-  const plan = await getCurrentPlan()
-  if (plan === 'free') {
-    const canCreate = await canCreateMoreInvoices()
-    if (!canCreate) {
-      throw new Error('FREE_LIMIT_REACHED')
-    }
-  }
 
   const subtotal = invoiceData.line_items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
   const vatRate = 20
@@ -382,7 +357,7 @@ export async function createInvoice(invoiceData: {
 
   const invoiceNumber = generateInvoiceNumber()
 
-  const { data: invoice, error } = await getSupabase()
+  const { data: invoice, error } = await supabase
     .from('invoices')
     .insert({
       user_id: user.id,
@@ -391,7 +366,7 @@ export async function createInvoice(invoiceData: {
       customer_id: invoiceData.customer_id,
       date: invoiceData.date,
       due_date: invoiceData.due_date,
-      status: 'pending' as InvoiceStatus,
+      status: 'pending',
       subtotal: Number(subtotal.toFixed(2)),
       vat_rate: vatRate,
       vat_amount: Number(vatAmount.toFixed(2)),
@@ -405,7 +380,7 @@ export async function createInvoice(invoiceData: {
   if (error) throw error
 
   // Fetch customer for return
-  const { data: customer } = await getSupabase()
+  const { data: customer } = await supabase
     .from('customers')
     .select('*')
     .eq('id', invoiceData.customer_id)
@@ -418,95 +393,63 @@ export async function createInvoice(invoiceData: {
   } as Invoice
 }
 
-export async function updateInvoice(
-  invoiceId: string,
-  updates: Partial<{
-    customer_id: string
-    date: string
-    due_date: string
-    line_items: InvoiceLineItem[]
-    notes: string | null
-    status: InvoiceStatus
-  }>
-): Promise<Invoice> {
-  const { data: { user } } = await getSupabase().auth.getUser()
+// ==================== Business Settings (Phase 6) ====================
+
+export async function getBusinessDetails(
+  providedSupabase?: SupabaseClient
+): Promise<BusinessDetails> {
+  const supabase = providedSupabase || await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  const payload: any = { ...updates }
+  const { data, error } = await supabase
+    .from('business_settings')
+    .select('*')
+    .eq('user_id', user.id)
+    .single()
 
-  if (updates.line_items) {
-    const subtotal = updates.line_items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0)
-    const vatRate = 20
-    const vatAmount = subtotal * (vatRate / 100)
-
-    payload.subtotal = Number(subtotal.toFixed(2))
-    payload.vat_rate = vatRate
-    payload.vat_amount = Number(vatAmount.toFixed(2))
-    payload.total = Number((subtotal + vatAmount).toFixed(2))
-    payload.line_items_json = updates.line_items
-    delete payload.line_items
+  if (error && error.code !== 'PGRST116') {
+    throw error
   }
 
-  const { data: invoice, error } = await getSupabase()
-    .from('invoices')
-    .update(payload)
-    .eq('id', invoiceId)
+  // Return defaults if no settings saved yet
+  return data || {
+    name: '',
+    vat_rate: 20,
+    plan: 'free' as const,
+  }
+}
+
+export async function saveBusinessDetails(
+  details: Partial<BusinessDetails>,
+  providedSupabase?: SupabaseClient
+): Promise<BusinessDetails> {
+  const supabase = providedSupabase || await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const payload = {
+    ...details,
+    user_id: user.id,
+    updated_at: new Date().toISOString(),
+  }
+
+  const { data, error } = await supabase
+    .from('business_settings')
+    .upsert(payload, { onConflict: 'user_id' })
     .select()
     .single()
 
   if (error) throw error
-
-  return invoice as Invoice
+  return data
 }
 
-// ==================== Plan & Limits ====================
-
+// Plan helpers
 export async function getCurrentPlan(): Promise<Plan> {
   try {
     const details = await getBusinessDetails()
-    // If subscription is not active, treat as free
-    if (details.plan !== 'free' && details.subscription_status !== 'active') {
-      return 'free'
-    }
     return details.plan || 'free'
   } catch {
     return 'free'
   }
-}
-
-/**
- * Returns how many invoices the current user has created in the current calendar month.
- */
-export async function getMonthlyInvoiceCount(): Promise<number> {
-  const { data: { user } } = await getSupabase().auth.getUser()
-  if (!user) return 0
-
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
-
-  const { count, error } = await getSupabase()
-    .from('invoices')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id)
-    .gte('date', startOfMonth)
-    .lte('date', endOfMonth)
-
-  if (error) {
-    console.error('Error counting monthly invoices:', error)
-    return 0
-  }
-
-  return count || 0
-}
-
-/**
- * Returns whether the current user can create more invoices this month.
- */
-export async function canCreateMoreInvoices(): Promise<boolean> {
-  const plan = await getCurrentPlan()
-  if (plan !== 'free') return true
-
-  const count = await getMonthlyInvoiceCount()
-  return count < 20
 }
