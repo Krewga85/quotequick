@@ -14,9 +14,16 @@ export async function createCheckoutSession(
   plan: 'pro' | 'premium',
   accessToken?: string
 ) {
+  console.log('=== [Checkout Action] START ===');
+  console.log('[Checkout Action] plan:', plan);
+  console.log('[Checkout Action] accessToken provided:', !!accessToken);
+  console.log('[Checkout Action] accessToken length:', accessToken ? accessToken.length : 0);
+
   try {
     // Use token-based client if accessToken is provided (more reliable for Server Actions)
     // Otherwise fall back to cookie-based client
+    const usingTokenAuth = !!accessToken;
+
     const supabase = accessToken
       ? createSupabaseClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,13 +36,26 @@ export async function createCheckoutSession(
             },
           }
         )
-      : await createClient()
+      : await createClient();
 
-    const { data: { user } } = await supabase.auth.getUser()
+    console.log('[Checkout Action] Using auth method:', usingTokenAuth ? 'ACCESS_TOKEN (hybrid)' : 'COOKIES (fallback)');
+
+    const { data: { user }, error: getUserError } = await supabase.auth.getUser();
+
+    console.log('[Checkout Action] getUser() result:');
+    console.log('  - hasUser:', !!user);
+    console.log('  - userId:', user?.id || 'null');
+    console.log('  - userEmail:', user?.email || 'null');
+    console.log('  - getUserError:', getUserError ? getUserError.message : 'none');
+    console.log('  - getUserError code:', getUserError?.code || 'none');
 
     if (!user) {
-      return { error: 'Not authenticated' }
+      console.log('[Checkout Action] ❌ No user found. Returning "Not authenticated"');
+      console.log('=== [Checkout Action] END (early return) ===');
+      return { error: 'Not authenticated' };
     }
+
+    console.log('[Checkout Action] ✅ User authenticated successfully');
 
     if (!plan || !['pro', 'premium'].includes(plan)) {
       return { error: 'Invalid plan' }
@@ -81,9 +101,15 @@ export async function createCheckoutSession(
       },
     })
 
+    console.log('[Checkout Action] Checkout session created successfully');
+    console.log('=== [Checkout Action] END (success) ===');
     return { url: session.url }
   } catch (error: any) {
-    console.error('createCheckoutSession error:', error)
+    console.error('[Checkout Action] ❌ Caught exception:');
+    console.error('  - message:', error.message);
+    console.error('  - name:', error.name);
+    console.error('  - stack:', error.stack?.split('\n').slice(0, 5).join('\n'));
+    console.log('=== [Checkout Action] END (exception) ===');
     return { error: error.message || 'Failed to start checkout' }
   }
 }
