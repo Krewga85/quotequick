@@ -58,14 +58,15 @@ const plans = [
 
 export default function PricingPage() {
   const handleUpgrade = async (plan: 'pro' | 'premium') => {
-    try {
-      const result = await createCheckoutSession(plan)
+    const result = await createCheckoutSession(plan)
 
-      if (result.url) {
-        window.location.href = result.url
-      }
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to start checkout')
+    if ('error' in result) {
+      toast.error(result.error)
+      return
+    }
+
+    if (result.url) {
+      window.location.href = result.url
     }
   }
 

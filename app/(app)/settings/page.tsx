@@ -142,13 +142,15 @@ export default function SettingsPage() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              try {
-                const result = await createBillingPortalSession()
-                if (result.url) {
-                  window.location.href = result.url
-                }
-              } catch (error: any) {
-                toast.error(error.message || 'Failed to open billing portal')
+              const result = await createBillingPortalSession()
+
+              if ('error' in result) {
+                toast.error(result.error)
+                return
+              }
+
+              if (result.url) {
+                window.location.href = result.url
               }
             }}
           >
