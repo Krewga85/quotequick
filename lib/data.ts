@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { Quote, QuoteLineItem, Customer } from './types'
+import { Quote, QuoteLineItem, Customer, Invoice, InvoiceLineItem, InvoiceStatus, Plan, BusinessDetails } from './types'
 import { createClient } from '@/lib/supabase/client'
 
 // Generate a simple quote number like Q-2405-0017
