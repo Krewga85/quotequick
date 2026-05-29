@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { Upload, X } from 'lucide-react'
 import { createBillingPortalSession } from './actions'
+import { createClient } from '@/lib/supabase/client'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -142,7 +143,10 @@ export default function SettingsPage() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              const result = await createBillingPortalSession()
+              const supabase = createClient()
+              const { data: { session } } = await supabase.auth.getSession()
+
+              const result = await createBillingPortalSession(session?.access_token)
 
               if ('error' in result) {
                 toast.error(result.error)

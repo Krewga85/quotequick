@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { createCheckoutSession } from './actions'
+import { createClient } from '@/lib/supabase/client'
 
 const plans = [
   {
@@ -58,17 +59,10 @@ const plans = [
 
 export default function PricingPage() {
   const handleUpgrade = async (plan: 'pro' | 'premium') => {
-    // Temporary client-side diagnostic
-    const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    console.log('[Client] Session before Server Action call:', {
-      hasSession: !!session,
-      userId: session?.user?.id,
-      hasAccessToken: !!session?.access_token,
-    })
 
-    const result = await createCheckoutSession(plan)
+    const result = await createCheckoutSession(plan, session?.access_token)
 
     if ('error' in result) {
       toast.error(result.error)

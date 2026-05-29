@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getBusinessDetails, saveBusinessDetails } from '@/lib/data'
 import { stripe } from '@/lib/stripe'
 
@@ -9,31 +10,30 @@ const PRICE_IDS = {
   premium: 'price_1TcRblRWL0hTk5XQ8PdfzcYy',
 } as const
 
-export async function createCheckoutSession(plan: 'pro' | 'premium') {
+export async function createCheckoutSession(
+  plan: 'pro' | 'premium',
+  accessToken?: string
+) {
   try {
-    const supabase = await createClient()
-
-    // Diagnostic logging - check what cookies are visible in the Server Action
-    const { cookies } = await import('next/headers')
-    const cookieStore = await cookies()
-    const cookieNames = cookieStore.getAll().map(c => c.name)
-    console.log('[Server Action] Cookies visible:', cookieNames)
+    // Use token-based client if accessToken is provided (more reliable for Server Actions)
+    // Otherwise fall back to cookie-based client
+    const supabase = accessToken
+      ? createSupabaseClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          {
+            global: {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            },
+          }
+        )
+      : await createClient()
 
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
-      console.log('[Server Action] No user from getUser()')
-      // Also try getSession for more info
-      const { data: { session } } = await supabase.auth.getSession()
-      console.log('[Server Action] Session from getSession():', !!session, session?.user?.id)
-
-      // Try one more time after getSession (sometimes helps with cookie refresh)
-      const { data: { user: user2 } } = await supabase.auth.getUser()
-      if (user2) {
-        console.log('[Server Action] Got user on second attempt after getSession')
-        // continue with user2 if needed, but for now we'll still error for visibility
-      }
-
       return { error: 'Not authenticated' }
     }
 

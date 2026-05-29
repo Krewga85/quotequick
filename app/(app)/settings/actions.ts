@@ -1,12 +1,27 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getBusinessDetails } from '@/lib/data'
 import { stripe } from '@/lib/stripe'
 
-export async function createBillingPortalSession() {
+export async function createBillingPortalSession(accessToken?: string) {
   try {
-    const supabase = await createClient()
+    // Use token-based client if accessToken is provided (more reliable for Server Actions)
+    const supabase = accessToken
+      ? createSupabaseClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          {
+            global: {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            },
+          }
+        )
+      : await createClient()
+
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
