@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Quote, QuoteLineItem, Customer } from './types'
+import { createClient } from '@/lib/supabase/client'
 
 // Generate a simple quote number like Q-2405-0017
 function generateQuoteNumber(): string {
@@ -10,18 +11,12 @@ function generateQuoteNumber(): string {
   return `Q-${year}${month}-${random}`
 }
 
-async function getSupabase() {
-  if (typeof window !== 'undefined') {
-    // Browser context: use browser client (safe for client components)
-    const { createClient } = await import('@/lib/supabase/client')
-    return createClient()
-  }
-
-  // Server context only: dynamically import to prevent 'next/headers' and 'server-only'
-  // from being bundled into any client chunks.
-  const { createClient } = await import(
-    /* webpackIgnore: true */ './supabase/server'
-  )
+function getSupabase() {
+  // Always use the browser Supabase client.
+  // This file is imported by client components, so we must never pull in server-only code
+  // (next/headers, server-only package).
+  // Server-only code (e.g. in Server Actions or API routes) should import from
+  // lib/supabase/server.ts directly.
   return createClient()
 }
 
