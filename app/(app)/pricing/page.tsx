@@ -66,10 +66,15 @@ export default function PricingPage() {
       return
     }
 
+    const { data: { session } } = await supabase.auth.getSession()
+
     try {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        },
         body: JSON.stringify({ plan }),
       });
 
