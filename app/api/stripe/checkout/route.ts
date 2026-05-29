@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { getUserFromRequest } from '@/lib/supabase/server';
-import { getBusinessDetails, saveBusinessDetails } from '@/lib/data';
+// Commented to prevent server-only (next/headers) from affecting build
+// import { getUserFromRequest } from '@/lib/supabase/server';
+// import { getBusinessDetails, saveBusinessDetails } from '@/lib/data';
 
 /**
  * NOTE: The main checkout flow now uses a Server Action (see app/(app)/pricing/actions.ts).

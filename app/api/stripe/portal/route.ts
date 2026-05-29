@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { getUserFromRequest } from '@/lib/supabase/server';
-import { getBusinessDetails } from '@/lib/data';
+// Commented to prevent server-only (next/headers) from affecting build
+// import { getUserFromRequest } from '@/lib/supabase/server';
+// import { getBusinessDetails } from '@/lib/data';
 
 /**
  * NOTE: The main billing portal flow now uses a Server Action
