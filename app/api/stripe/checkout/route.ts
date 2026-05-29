@@ -1,34 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { createClient } from '@/lib/supabase/server';
+import { getUserFromRequest } from '@/lib/supabase/server';
 import { getBusinessDetails, saveBusinessDetails } from '@/lib/data';
+
+/**
+ * NOTE: The main checkout flow now uses a Server Action (see app/(app)/pricing/actions.ts).
+ * This route is kept for backward compatibility / future use but is no longer called from the pricing page.
+ */
 
 export const dynamic = 'force-dynamic';
 
 const PRICE_IDS = {
-  pro: process.env.STRIPE_PRO_PRICE_ID!,
-  premium: process.env.STRIPE_PREMIUM_PRICE_ID!,
+  pro: 'price_1TcRb0RWL0hTk5XQVHXWpG7Y',
+  premium: 'price_1TcRblRWL0hTk5XQ8PdfzcYy',
 };
 
 export async function POST(req: NextRequest) {
   try {
-    console.log("Checkout route hit");
-    console.log("Headers:", req.headers);
-
     const { plan } = await req.json();
 
     if (!plan || !['pro', 'premium'].includes(plan)) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
     }
 
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user, supabase } = await getUserFromRequest(req);
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const businessDetails = await getBusinessDetails();
+    const businessDetails = await getBusinessDetails(supabase);
 
     let customerId = businessDetails.stripe_customer_id;
 
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
       await saveBusinessDetails({
         ...businessDetails,
         stripe_customer_id: customerId,
-      });
+      }, supabase);
     }
 
     const priceId = PRICE_IDS[plan as 'pro' | 'premium'];

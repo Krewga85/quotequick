@@ -1,39 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { createClient } from '@/lib/supabase/server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { getUserFromRequest } from '@/lib/supabase/server';
 import { getBusinessDetails } from '@/lib/data';
+
+/**
+ * NOTE: The main billing portal flow now uses a Server Action
+ * (see app/(app)/settings/actions.ts).
+ * This route is kept for backward compatibility but is no longer called
+ * from the Settings page.
+ */
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
-    let user = null;
-
-    // Prefer Authorization header (sent from client)
-    const authHeader = req.headers.get('authorization');
-    if (authHeader?.startsWith('Bearer ')) {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-      const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey, {
-        global: { headers: { Authorization: authHeader } }
-      });
-      const { data: { user: tokenUser } } = await supabase.auth.getUser();
-      user = tokenUser;
-    }
-
-    // Fallback to cookie-based auth
-    if (!user) {
-      const supabase = await createClient();
-      const { data: { user: cookieUser } } = await supabase.auth.getUser();
-      user = cookieUser;
-    }
+    const { user, supabase } = await getUserFromRequest(req);
 
     if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const businessDetails = await getBusinessDetails();
+    const businessDetails = await getBusinessDetails(supabase);
 
     if (!businessDetails.stripe_customer_id) {
       return NextResponse.json(

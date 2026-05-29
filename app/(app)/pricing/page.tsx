@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
+import { createCheckoutSession } from './actions'
 
 const plans = [
   {
@@ -58,35 +58,14 @@ const plans = [
 
 export default function PricingPage() {
   const handleUpgrade = async (plan: 'pro' | 'premium') => {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      toast.error('Please log in to upgrade your account.')
-      return
-    }
-
-    const { data: { session } } = await supabase.auth.getSession()
-
     try {
-      const res = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
-        },
-        body: JSON.stringify({ plan }),
-      });
+      const result = await createCheckoutSession(plan)
 
-      const data = await res.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        toast.error(data.error || 'Failed to start checkout');
+      if (result.url) {
+        window.location.href = result.url
       }
-    } catch (error) {
-      toast.error('Something went wrong. Please try again.');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to start checkout')
     }
   }
 
@@ -151,7 +130,7 @@ export default function PricingPage() {
 
       <div className="mt-12 text-center text-sm text-muted-foreground">
         All plans include unlimited PDF downloads and mobile access.<br />
-        Questions? <a href="mailto:hello@quotequick.app" className="underline hover:text-foreground">Contact us</a>
+        Questions? <a href="mailto:hello@quotequick.uk" className="underline hover:text-foreground">Contact us</a>
       </div>
     </div>
   )

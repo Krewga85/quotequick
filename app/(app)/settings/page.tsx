@@ -1,15 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getBusinessDetails, saveBusinessDetails, getQuotes, getInvoices } from '@/lib/data'
-import { BusinessDetails, Plan } from '@/lib/types'
+import { getBusinessDetails, saveBusinessDetails } from '@/lib/data'
+import { BusinessDetails } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
-import { Upload, X, LogOut, Download } from 'lucide-react'
-import { createClient } from '@/lib/supabase/client'
-import { exportQuotesToCSV, exportInvoicesToCSV } from '@/lib/export'
+import { Upload, X } from 'lucide-react'
+import { createBillingPortalSession } from './actions'
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -20,21 +19,8 @@ export default function SettingsPage() {
     plan: 'free',
   })
 
-  // Account state
-  const [userEmail, setUserEmail] = useState<string>('')
-  const [newEmail, setNewEmail] = useState('')
-  const [updatingEmail, setUpdatingEmail] = useState(false)
-
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [updatingPassword, setUpdatingPassword] = useState(false)
-
-  const [exportingQuotes, setExportingQuotes] = useState(false)
-  const [exportingInvoices, setExportingInvoices] = useState(false)
-
   useEffect(() => {
     loadSettings()
-    loadUser()
   }, [])
 
   async function loadSettings() {
@@ -119,109 +105,6 @@ export default function SettingsPage() {
     }
   }
 
-  // Load current authenticated user email
-  async function loadUser() {
-    try {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user?.email) {
-        setUserEmail(user.email)
-        setNewEmail(user.email)
-      }
-    } catch (e) {
-      console.error('Failed to load user', e)
-    }
-  }
-
-  // Update email address (Supabase sends confirmation email if required)
-  async function handleUpdateEmail() {
-    if (!newEmail || newEmail === userEmail) {
-      toast.error('Please enter a different email address')
-      return
-    }
-
-    setUpdatingEmail(true)
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.updateUser({ email: newEmail })
-      if (error) throw error
-      toast.success('Email update requested — check your inbox to confirm the change')
-      setUserEmail(newEmail)
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update email')
-    } finally {
-      setUpdatingEmail(false)
-    }
-  }
-
-  // Change password
-  async function handleUpdatePassword() {
-    if (!newPassword || newPassword.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match')
-      return
-    }
-
-    setUpdatingPassword(true)
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.updateUser({ password: newPassword })
-      if (error) throw error
-      toast.success('Password updated successfully')
-      setNewPassword('')
-      setConfirmPassword('')
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update password')
-    } finally {
-      setUpdatingPassword(false)
-    }
-  }
-
-  // Export helpers (lazy load data then download)
-  async function handleExportQuotes() {
-    setExportingQuotes(true)
-    try {
-      const quotes = await getQuotes()
-      if (quotes.length === 0) {
-        toast.error('No quotes to export yet')
-        return
-      }
-      exportQuotesToCSV(quotes)
-      toast.success(`Exported ${quotes.length} quotes`)
-    } catch (e) {
-      toast.error('Failed to export quotes')
-    } finally {
-      setExportingQuotes(false)
-    }
-  }
-
-  async function handleExportInvoices() {
-    setExportingInvoices(true)
-    try {
-      const invoices = await getInvoices()
-      if (invoices.length === 0) {
-        toast.error('No invoices to export yet')
-        return
-      }
-      exportInvoicesToCSV(invoices)
-      toast.success(`Exported ${invoices.length} invoices`)
-    } catch (e) {
-      toast.error('Failed to export invoices')
-    } finally {
-      setExportingInvoices(false)
-    }
-  }
-
-  // Sign out
-  async function handleSignOut() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = '/login'
-  }
-
   if (loading) {
     return (
       <div className="p-8">
@@ -231,11 +114,11 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6 pb-12">
+    <div className="max-w-3xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">My Business</h1>
         <p className="text-muted-foreground mt-1">
-          Manage your account, subscription, and business details for quotes and invoices.
+          These details will automatically appear on your quotes and invoices.
         </p>
       </div>
 
@@ -259,105 +142,19 @@ export default function SettingsPage() {
             variant="outline"
             size="sm"
             onClick={async () => {
-              const res = await fetch('/api/stripe/portal', { method: 'POST' });
-              const data = await res.json();
-              if (data.url) window.location.href = data.url;
+              try {
+                const result = await createBillingPortalSession()
+                if (result.url) {
+                  window.location.href = result.url
+                }
+              } catch (error: any) {
+                toast.error(error.message || 'Failed to open billing portal')
+              }
             }}
           >
             Manage Subscription
           </Button>
         )}
-      </div>
-
-      {/* Account Settings */}
-      <div className="card p-6 mb-8">
-        <h2 className="text-lg font-semibold mb-1">Account</h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Manage your login details and download everything you've created.
-        </p>
-
-        {/* Email */}
-        <div className="mb-6">
-          <Label className="text-xs text-muted-foreground">Email address</Label>
-          <div className="flex flex-col sm:flex-row gap-3 mt-1.5">
-            <Input
-              type="email"
-              value={newEmail}
-              onChange={(e) => setNewEmail(e.target.value)}
-              className="flex-1"
-              placeholder="you@trades.co.uk"
-            />
-            <Button
-              onClick={handleUpdateEmail}
-              disabled={updatingEmail || !newEmail || newEmail === userEmail}
-              variant="outline"
-            >
-              {updatingEmail ? 'Updating...' : 'Update email'}
-            </Button>
-          </div>
-          {userEmail && newEmail !== userEmail && (
-            <p className="text-xs text-muted-foreground mt-1.5">
-              Changing email will require confirmation via a link sent to the new address.
-            </p>
-          )}
-        </div>
-
-        {/* Password */}
-        <div className="mb-6">
-          <Label className="text-xs text-muted-foreground">Change password</Label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5">
-            <Input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="New password (min 6 chars)"
-            />
-            <Input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Confirm new password"
-            />
-          </div>
-          <div className="mt-3">
-            <Button
-              onClick={handleUpdatePassword}
-              disabled={updatingPassword || !newPassword}
-              variant="outline"
-              size="sm"
-            >
-              {updatingPassword ? 'Updating password...' : 'Update password'}
-            </Button>
-          </div>
-        </div>
-
-        {/* Data Export */}
-        <div className="pt-4 border-t">
-          <div className="text-xs text-muted-foreground mb-2">Your data</div>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              variant="outline"
-              onClick={handleExportQuotes}
-              disabled={exportingQuotes}
-              className="flex-1 sm:flex-none"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {exportingQuotes ? 'Exporting quotes...' : 'Export quotes (CSV)'}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleExportInvoices}
-              disabled={exportingInvoices}
-              className="flex-1 sm:flex-none"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {exportingInvoices ? 'Exporting invoices...' : 'Export invoices (CSV)'}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Downloads everything in your account as easy-to-open CSV files.
-          </p>
-        </div>
       </div>
 
       <div className="space-y-8">
@@ -406,7 +203,7 @@ export default function SettingsPage() {
                 value={details.address || ''}
                 onChange={(e) => updateField('address', e.target.value)}
                 rows={3}
-                className="mt-1.5 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+                className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 placeholder="123 High Street&#10;London&#10;SW1A 1AA"
               />
             </div>
@@ -439,7 +236,7 @@ export default function SettingsPage() {
         <div className="card p-6">
           <h2 className="text-lg font-semibold mb-4">Logo</h2>
           <p className="text-sm text-muted-foreground mb-4">
-            Upload your company logo. It will appear on quotes and invoices (Pro & Premium plans recommended).
+            Upload your company logo. It will appear on quotes and invoices.
           </p>
 
           {details.logo ? (
@@ -513,17 +310,6 @@ export default function SettingsPage() {
             {saving ? 'Saving...' : 'Save Business Settings'}
           </Button>
         </div>
-      </div>
-
-      {/* Sign out */}
-      <div className="flex justify-center mt-8">
-        <button
-          onClick={handleSignOut}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <LogOut className="h-4 w-4" />
-          Sign out
-        </button>
       </div>
     </div>
   )
