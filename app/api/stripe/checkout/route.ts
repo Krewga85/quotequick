@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@/lib/supabase/server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getBusinessDetails, saveBusinessDetails } from '@/lib/data';
 
 export const dynamic = 'force-dynamic';
@@ -13,15 +12,21 @@ const PRICE_IDS = {
 
 export async function POST(req: NextRequest) {
   try {
+    console.log("Checkout route hit");
+    console.log("Headers:", req.headers);
+
     const { plan } = await req.json();
 
     if (!plan || !['pro', 'premium'].includes(plan)) {
       return NextResponse.json({ error: 'Invalid plan' }, { status: 400 });
     }
 
-    // TEMPORARY BYPASS: Auth check disabled for testing the Stripe flow.
-    // TODO: Re-enable proper auth once everything else is working.
-    const user = { id: 'test-user-123', email: 'test@quotequick.uk' };
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     const businessDetails = await getBusinessDetails();
 
