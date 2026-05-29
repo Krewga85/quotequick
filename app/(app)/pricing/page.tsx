@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 
 const plans = [
   {
@@ -57,6 +58,14 @@ const plans = [
 
 export default function PricingPage() {
   const handleUpgrade = async (plan: 'pro' | 'premium') => {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      toast.error('Please log in to upgrade your account.')
+      return
+    }
+
     try {
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
