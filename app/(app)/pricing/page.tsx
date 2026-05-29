@@ -58,6 +58,16 @@ const plans = [
 
 export default function PricingPage() {
   const handleUpgrade = async (plan: 'pro' | 'premium') => {
+    // Temporary client-side diagnostic
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    console.log('[Client] Session before Server Action call:', {
+      hasSession: !!session,
+      userId: session?.user?.id,
+      hasAccessToken: !!session?.access_token,
+    })
+
     const result = await createCheckoutSession(plan)
 
     if ('error' in result) {

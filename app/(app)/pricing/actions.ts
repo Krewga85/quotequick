@@ -12,9 +12,28 @@ const PRICE_IDS = {
 export async function createCheckoutSession(plan: 'pro' | 'premium') {
   try {
     const supabase = await createClient()
+
+    // Diagnostic logging - check what cookies are visible in the Server Action
+    const { cookies } = await import('next/headers')
+    const cookieStore = await cookies()
+    const cookieNames = cookieStore.getAll().map(c => c.name)
+    console.log('[Server Action] Cookies visible:', cookieNames)
+
     const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) {
+      console.log('[Server Action] No user from getUser()')
+      // Also try getSession for more info
+      const { data: { session } } = await supabase.auth.getSession()
+      console.log('[Server Action] Session from getSession():', !!session, session?.user?.id)
+
+      // Try one more time after getSession (sometimes helps with cookie refresh)
+      const { data: { user: user2 } } = await supabase.auth.getUser()
+      if (user2) {
+        console.log('[Server Action] Got user on second attempt after getSession')
+        // continue with user2 if needed, but for now we'll still error for visibility
+      }
+
       return { error: 'Not authenticated' }
     }
 
