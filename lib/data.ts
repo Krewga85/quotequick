@@ -1,4 +1,3 @@
-import { createClient } from './supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Quote, QuoteLineItem, Customer } from './types'
 
@@ -11,13 +10,23 @@ function generateQuoteNumber(): string {
   return `Q-${year}${month}-${random}`
 }
 
-function getSupabase() {
+async function getSupabase() {
+  if (typeof window !== 'undefined') {
+    // Running in browser - use the browser Supabase client
+    // This prevents server-only code (next/headers) from being bundled into client chunks
+    const { createClient } = await import('@/lib/supabase/client')
+    return createClient()
+  }
+
+  // Server / RSC context - use the server Supabase client
+  const { createClient } = await import('./supabase/server')
   return createClient()
 }
 
 // Customers (basic for now)
 export async function getCustomers(): Promise<Customer[]> {
-  const { data, error } = await (await getSupabase())
+  const supabase = await getSupabase()
+  const { data, error } = await supabase
     .from('customers')
     .select('*')
     .order('created_at', { ascending: false })
@@ -28,7 +37,8 @@ export async function getCustomers(): Promise<Customer[]> {
 
 // Quotes
 export async function getQuotes(): Promise<Quote[]> {
-  const { data, error } = await (await getSupabase())
+  const supabase = await getSupabase()
+  const { data, error } = await supabase
     .from('quotes')
     .select(`
       *,
@@ -41,7 +51,8 @@ export async function getQuotes(): Promise<Quote[]> {
   // Fetch line items for each quote
   const quotesWithItems = await Promise.all(
     (data || []).map(async (quote) => {
-      const { data: items } = await (await getSupabase())
+      const supabase = await getSupabase()
+      const { data: items } = await supabase
         .from('quote_line_items')
         .select('*')
         .eq('quote_id', quote.id)
@@ -155,10 +166,21 @@ export async function getQuoteById(id: string): Promise<Quote | null> {
 }
 
 export async function updateQuoteStatus(quoteId: string, status: 'accepted' | 'declined'): Promise<void> {
-  const { error } = await (await getSupabase())
+  const supabase = await getSupabase()
+  const { error } = await supabase
     .from('quotes')
     .update({ status })
     .eq('id', quoteId)
+
+  if (error) throw error
+}
+
+export async function deleteQuote(id: string): Promise<void> {
+  const supabase = await getSupabase()
+  const { error } = await supabase
+    .from('quotes')
+    .delete()
+    .eq('id', id)
 
   if (error) throw error
 }
@@ -181,7 +203,8 @@ export async function createCustomer(customer: Omit<Customer, 'id' | 'user_id' |
 }
 
 export async function updateCustomer(id: string, updates: Partial<Omit<Customer, 'id' | 'user_id' | 'created_at'>>): Promise<Customer> {
-  const { data, error } = await (await getSupabase())
+  const supabase = await getSupabase()
+  const { data, error } = await supabase
     .from('customers')
     .update(updates)
     .eq('id', id)
@@ -193,7 +216,8 @@ export async function updateCustomer(id: string, updates: Partial<Omit<Customer,
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
-  const { error } = await (await getSupabase())
+  const supabase = await getSupabase()
+  const { error } = await supabase
     .from('customers')
     .delete()
     .eq('id', id)
@@ -298,7 +322,8 @@ export async function createInvoiceFromQuote(quoteId: string): Promise<Invoice> 
 }
 
 export async function updateInvoiceStatus(invoiceId: string, status: InvoiceStatus): Promise<void> {
-  const { error } = await (await getSupabase())
+  const supabase = await getSupabase()
+  const { error } = await supabase
     .from('invoices')
     .update({ status })
     .eq('id', invoiceId)
@@ -391,6 +416,29 @@ export async function createInvoice(invoiceData: {
     customer,
     line_items: invoiceData.line_items,
   } as Invoice
+}
+
+export async function getMonthlyInvoiceCount(): Promise<number> {
+  const supabase = await getSupabase()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const startOfMonth = `${year}-${month}-01`
+  const lastDay = new Date(year, now.getMonth() + 1, 0).getDate()
+  const endOfMonth = `${year}-${month}-${String(lastDay).padStart(2, '0')}`
+
+  const { count, error } = await supabase
+    .from('invoices')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .gte('date', startOfMonth)
+    .lte('date', endOfMonth)
+
+  if (error) throw error
+  return count || 0
 }
 
 // ==================== Business Settings (Phase 6) ====================
