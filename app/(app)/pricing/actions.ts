@@ -61,7 +61,10 @@ export async function createCheckoutSession(
       return { error: 'Invalid plan' }
     }
 
-    const businessDetails = await getBusinessDetails()
+    console.log('[Checkout Action] Calling getBusinessDetails with authenticated client...');
+    // Pass the authenticated supabase client so getBusinessDetails uses the same auth context
+    const businessDetails = await getBusinessDetails(supabase);
+    console.log('[Checkout Action] getBusinessDetails succeeded');
 
     let customerId = businessDetails.stripe_customer_id
 
@@ -75,10 +78,12 @@ export async function createCheckoutSession(
       })
       customerId = customer.id
 
+      console.log('[Checkout Action] Saving new stripe_customer_id...');
       await saveBusinessDetails({
         ...businessDetails,
         stripe_customer_id: customerId,
-      })
+      }, supabase)
+      console.log('[Checkout Action] stripe_customer_id saved');
     }
 
     const priceId = PRICE_IDS[plan]

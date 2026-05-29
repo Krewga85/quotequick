@@ -28,7 +28,7 @@ export async function createBillingPortalSession(accessToken?: string) {
       return { error: 'Not authenticated' }
     }
 
-    const businessDetails = await getBusinessDetails()
+    const businessDetails = await getBusinessDetails(supabase)
 
     if (!businessDetails.stripe_customer_id) {
       return { error: 'No active subscription found' }
